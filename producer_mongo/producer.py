@@ -1,47 +1,48 @@
-from kafka import KafkaConsumer
-import pymongo
+from kafka import KafkaProducer
 import json
-import os
+import time
+import requests
 
 # Configuración
 KAFKA_BROKER = 'kafka:9092'
 TOPIC_NAME = 'transactions_mongodb'
-MONGO_URI = 'mongodb://mongodb:27017/'
-MONGO_DB = 'bigdata'
-MONGO_COLLECTION = 'transactions_stats'
+RESULTS_URL = 'https://raw.githubusercontent.com/SoyEtoor/spark-labs-parcial/main/results/domain_statistics/data.jsonl'
 
-def create_mongo_connection():
-    """Crea conexión a MongoDB"""
-    client = pymongo.MongoClient(MONGO_URI)
-    db = client[MONGO_DB]
-    return db[MONGO_COLLECTION]
+def fetch_data():
+    """Obtiene datos del repositorio GitHub"""
+    response = requests.get(RESULTS_URL)
+    if response.status_code == 200:
+        return [json.loads(line) for line in response.text.split('\n') if line]
+    return []
 
-def create_consumer():
-    """Crea y retorna un consumidor Kafka"""
-    return KafkaConsumer(
-        TOPIC_NAME,
+def create_producer():
+    """Crea y retorna un productor Kafka"""
+    return KafkaProducer(
         bootstrap_servers=KAFKA_BROKER,
-        auto_offset_reset='earliest',
-        value_deserializer=lambda x: json.loads(x.decode('utf-8')),
-        group_id='mongodb-consumer-group'
+        value_serializer=lambda v: json.dumps(v).encode('utf-8'),
+        acks='all',
+        retries=3
     )
 
-def process_messages(consumer, collection):
-    """Procesa mensajes y los guarda en MongoDB"""
-    for message in consumer:
+def produce_messages(producer, data):
+    """Envía mensajes al topic de Kafka"""
+    for record in data:
         try:
-            data = message.value
-            print(f"Recibido: {data}")
-            
-            # Insertar en MongoDB
-            collection.insert_one(data)
-            print(f"Insertado en MongoDB: {data}")
-            
+            producer.send(TOPIC_NAME, value=record)
+            print(f"Enviado: {record}")
+            time.sleep(1)  # Para no saturar
         except Exception as e:
-            print(f"Error procesando mensaje: {e}")
+            print(f"Error enviando mensaje: {e}")
 
 if __name__ == "__main__":
-    print("Iniciando consumidor Kafka para MongoDB...")
-    collection = create_mongo_connection()
-    consumer = create_consumer()
-    process_messages(consumer, collection)
+    print("Iniciando productor Kafka para MongoDB...")
+    producer = create_producer()
+    
+    while True:
+        data = fetch_data()
+        if data:
+            produce_messages(producer, data)
+        else:
+            print("No se pudo obtener datos o no hay datos nuevos")
+        
+        time.sleep(60)  # Espera 1 minuto antes de verificar nuevos datos
