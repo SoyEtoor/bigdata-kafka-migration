@@ -1,91 +1,33 @@
-version: '3.8'
+name: Deploy Kafka Migration System
 
-services:
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.3.0
-    hostname: zookeeper
-    container_name: zookeeper
-    ports:
-      - "2181:2181"
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
 
-  kafka:
-    image: confluentinc/cp-kafka:7.3.0
-    hostname: kafka
-    container_name: kafka
-    depends_on:
-      - zookeeper
-    ports:
-      - "9092:9092"
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_INTERNAL://kafka:29092
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-
-  mongodb:
-    image: mongo:6.0
-    container_name: mongodb
-    ports:
-      - "27017:27017"
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: example
-    volumes:
-      - mongodb_data:/data/db
-
-  postgres:
-    image: postgres:14
-    container_name: postgres
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: bigdata
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-  producer-mongodb:
-    build:
-      context: ./producer_mongodb
-    depends_on:
-      - kafka
-    environment:
-      KAFKA_BROKER: kafka:9092
-
-  consumer-mongodb:
-    build:
-      context: ./consumer_mongodb
-    depends_on:
-      - kafka
-      - mongodb
-    environment:
-      KAFKA_BROKER: kafka:9092
-      MONGO_URI: mongodb://root:example@mongodb:27017/
-
-  producer-postgresql:
-    build:
-      context: ./producer_postgresql
-    depends_on:
-      - kafka
-    environment:
-      KAFKA_BROKER: kafka:9092
-
-  consumer-postgresql:
-    build:
-      context: ./consumer_postgresql
-    depends_on:
-      - kafka
-      - postgres
-    environment:
-      KAFKA_BROKER: kafka:9092
-
-volumes:
-  mongodb_data:
-  postgres_data:
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+      
+    - name: Login to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKER_HUB_USERNAME }}
+        password: ${{ secrets.DOCKER_HUB_TOKEN }}
+      
+    - name: Start containers
+      run: docker-compose up -d --build
+      
+    - name: Verify services
+      run: |
+        docker ps
+        docker-compose ps
