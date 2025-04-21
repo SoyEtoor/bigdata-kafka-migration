@@ -5,6 +5,10 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -14,7 +18,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Set up Docker without conflicts
+    - name: Set up Docker with Compose plugin
       run: |
         # Remove any existing Docker installations
         sudo apt-get remove -y docker docker-engine docker.io containerd runc || true
@@ -32,16 +36,24 @@ jobs:
           "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
           $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
         
-        # Install Docker Engine
+        # Install Docker Engine with Compose plugin
         sudo apt-get update
         sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
         
+        # Create symbolic link for docker-compose compatibility
+        sudo ln -s /usr/libexec/docker/cli-plugins/docker-compose /usr/bin/docker-compose
+        
         # Verify installation
         sudo docker --version
-        docker-compose --version
+        sudo docker compose version
+        sudo docker-compose --version
+        
+        # Add current user to docker group (needs logout/login to take effect)
+        sudo usermod -aG docker $USER
         
     - name: Build and start containers
       run: |
+        sudo docker compose version
         sudo docker-compose build
         sudo docker-compose up -d
         
